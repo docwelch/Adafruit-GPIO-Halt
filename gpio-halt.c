@@ -67,7 +67,7 @@ char
    sysfs_root[] = "/sys/class/gpio", // Location of Sysfs GPIO files
    running      = 1;                 // Signal handler will set to 0 (exit)
 int
-   pin          = 21;                // Shutdown pin # (override w/argv)
+   pin          = 228;                // Shutdown pin # (override w/argv)
 volatile unsigned int
   *gpio;                             // GPIO register table
 const int
@@ -133,58 +133,16 @@ static int boardType(void) {
 			   (n == 0x3F000000)) {
 				board = 2; // Appears to be a Pi 2
 				break;
-			} else if((ptr = strstr(buf, "boardrev=")) &&
-			          (sscanf(&ptr[9], "%x", &n) == 1) &&
-			          ((n == 0x02) || (n == 0x03))) {
-				board = 0; // Appears to be an early Pi
-				break;
-			}
-		}
-		fclose(fp);
-	}
-#else
-	char s[8];
-	if((fp = fopen("/proc/cpuinfo", "r"))) {
-		while(fgets(buf, sizeof(buf), fp)) {
-			if((ptr = strstr(buf, "Hardware")) &&
-			   (sscanf(&ptr[8], " : %7s", s) == 1) &&
-			   (!strcmp(s, "BCM2709"))) {
-				board = 2; // Appears to be a Pi 2
-				break;
-			} else if((ptr = strstr(buf, "Revision")) &&
-			          (sscanf(&ptr[8], " : %x", &n) == 1) &&
-			          ((n == 0x02) || (n == 0x03))) {
-				board = 0; // Appears to be an early Pi
-				break;
-			}
-		}
-		fclose(fp);
-	}
-#endif
-
-	return board;
-}
-
 
 // Main stuff ------------------------------------------------------------
-
-#define PI1_BCM2708_PERI_BASE 0x20000000
-#define PI1_GPIO_BASE         (PI1_BCM2708_PERI_BASE + 0x200000)
-#define PI2_BCM2708_PERI_BASE 0x3F000000
-#define PI2_GPIO_BASE         (PI2_BCM2708_PERI_BASE + 0x200000)
-#define BLOCK_SIZE            (4*1024)
-#define GPPUD                 (0x94 / 4)
-#define GPPUDCLK0             (0x98 / 4)
 
 int main(int argc, char *argv[]) {
 
 	char                   buf[50],      // For sundry filenames
-	                       c,            // Pin input value ('0'/'1')
-	                       board;        // 0=Pi1Rev1, 1=Pi1Rev2, 2=Pi2
+	                       c;            // Pin input value ('0'/'1')
 	int                    fd,           // For mmap, sysfs, uinput
 	                       timeout = -1, // poll() timeout
 	                       pressed;      // Last-read pin state
-	volatile unsigned char shortWait;    // Delay counter
 	struct pollfd          p;            // GPIO file descriptor
 
 	progName = argv[0];             // For error reporting
@@ -192,44 +150,6 @@ int main(int argc, char *argv[]) {
 	signal(SIGKILL, signalHandler);
 
 	if(argc > 1) pin = atoi(argv[1]);
-
-	// If this is a "Revision 1" Pi board (no mounting holes),
-	// remap certain pin numbers for compatibility.
-	board = boardType();
-	if(board == 0) {
-		if(     pin ==  2) pin = 0;
-		else if(pin ==  3) pin = 1;
-		else if(pin == 27) pin = 21;
-	}
-
-	// ----------------------------------------------------------------
-	// Although Sysfs provides solid GPIO interrupt handling, there's
-	// no interface to the internal pull-up resistors (this is by
-	// design, being a hardware-dependent feature).  It's necessary to
-	// grapple with the GPIO configuration registers directly to enable
-	// the pull-ups.  Based on GPIO example code by Dom and Gert van
-	// Loo on elinux.org
-
-	if((fd = open("/dev/mem", O_RDWR | O_SYNC)) < 0)
-		err("Can't open /dev/mem");
-	gpio = mmap(            // Memory-mapped I/O
-	  NULL,                 // Any adddress will do
-	  BLOCK_SIZE,           // Mapped block length
-	  PROT_READ|PROT_WRITE, // Enable read+write
-	  MAP_SHARED,           // Shared with other processes
-	  fd,                   // File to map
-	  (board == 2) ?
-	   PI2_GPIO_BASE :      // -> GPIO registers
-	   PI1_GPIO_BASE);
-	close(fd);              // Not needed after mmap()
-	if(gpio == MAP_FAILED) err("Can't mmap()");
-	gpio[GPPUD]     = 2;                    // Enable pullup
-	for(shortWait=150;--shortWait;);        // Min 150 cycle wait
-	gpio[GPPUDCLK0] = 1 << pin;             // Set pullup mask
-	for(shortWait=150;--shortWait;);        // Wait again
-	gpio[GPPUD]     = 0;                    // Reset pullup registers
-	gpio[GPPUDCLK0] = 0;
-	(void)munmap((void *)gpio, BLOCK_SIZE); // Done with GPIO mmap()
 
 	// ----------------------------------------------------------------
 	// All other GPIO config is handled through the sysfs interface.
