@@ -112,28 +112,6 @@ void signalHandler(int n) {
 	running = 0;
 }
 
-// Detect Pi board type.  Doesn't return super-granular details,
-// just the most basic distinction needed for GPIO compatibility:
-// 0: Pi 1 Model B revision 1
-// 1: Pi 1 Model B revision 2, Model A, Model B+, Model A+
-// 2: Pi 2 Model B
-
-static int boardType(void) {
-	FILE *fp;
-	char  buf[1024], *ptr;
-	int   n, board = 1; // Assume Pi1 Rev2 by default
-
-	// Relies on info in /proc/cmdline.  If this becomes unreliable
-	// in the future, alt code below uses /proc/cpuinfo if any better.
-#if 1
-	if((fp = fopen("/proc/cmdline", "r"))) {
-		while(fgets(buf, sizeof(buf), fp)) {
-			if((ptr = strstr(buf, "mem_size=")) &&
-			   (sscanf(&ptr[9], "%x", &n) == 1) &&
-			   (n == 0x3F000000)) {
-				board = 2; // Appears to be a Pi 2
-				break;
-
 // Main stuff ------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
